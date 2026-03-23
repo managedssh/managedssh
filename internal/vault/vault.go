@@ -157,6 +157,12 @@ func Unlock(password string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	return UnlockWithMetaJSON(password, data)
+}
+
+// UnlockWithMetaJSON verifies a master password against vault metadata bytes
+// and returns the derived encryption key on success.
+func UnlockWithMetaJSON(password string, data []byte) ([]byte, error) {
 	var m meta
 	if err := json.Unmarshal(data, &m); err != nil {
 		return nil, err

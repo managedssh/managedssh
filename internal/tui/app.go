@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -11,6 +12,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"golang.org/x/crypto/ssh"
 
+	"github.com/managedssh/managedssh/internal/backup"
 	"github.com/managedssh/managedssh/internal/host"
 	"github.com/managedssh/managedssh/internal/sshclient"
 	"github.com/managedssh/managedssh/internal/vault"
@@ -23,6 +25,11 @@ const (
 	phaseSetupConfirm
 	phaseUnlock
 	phaseDashboard
+	phaseExportAuth
+	phaseExportPath
+	phaseImportConfirm
+	phaseImportPath
+	phaseImportPassword
 	phaseHostForm
 	phaseUserSelect
 	phaseHostVerifying
@@ -75,6 +82,11 @@ type model struct {
 	searchFocused bool
 	confirmDelete bool
 	connErr       string
+	exportErr     string
+	exportDir     string
+	importErr     string
+	importPath    string
+	importReturn  phase
 	userCursor    int
 	selectedHost  host.Host
 
@@ -135,6 +147,16 @@ func newKeyPassphraseInput() textinput.Model {
 	return ti
 }
 
+func newPathInput(placeholder string) textinput.Model {
+	ti := textinput.New()
+	ti.Placeholder = placeholder
+	ti.EchoMode = textinput.EchoNormal
+	ti.Focus()
+	ti.CharLimit = 1024
+	ti.Width = 60
+	return ti
+}
+
 func initialModel() (model, error) {
 	exists, err := vault.Exists()
 	if err != nil {
@@ -177,6 +199,20 @@ func (m model) refreshFiltered() model {
 	if m.hostCursor >= len(m.filtered) {
 		m.hostCursor = max(0, len(m.filtered)-1)
 	}
+	return m
+}
+
+func (m model) toLockedSession() model {
+	vault.ZeroKey(m.encKey)
+	m.encKey = nil
+	zeroBytes(m.password)
+	m.password = nil
+	m.phase = phaseUnlock
+	m.input = newPasswordInput("Enter master key...")
+	m.formErr = ""
+	m.importErr = ""
+	m.connErr = ""
+	m.err = ""
 	return m
 }
 
@@ -262,6 +298,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateUnlock(msg)
 	case phaseDashboard:
 		return m.updateDashboard(msg)
+	case phaseExportAuth:
+		return m.updateExportAuth(msg)
+	case phaseExportPath:
+		return m.updateExportPath(msg)
+	case phaseImportConfirm:
+		return m.updateImportConfirm(msg)
+	case phaseImportPath:
+		return m.updateImportPath(msg)
+	case phaseImportPassword:
+		return m.updateImportPassword(msg)
 	case phaseHostForm:
 		return m.updateHostForm(msg)
 	case phaseUserSelect:
@@ -297,6 +343,16 @@ func (m model) View() string {
 		content = m.viewUnlock()
 	case phaseDashboard:
 		return m.viewDashboard()
+	case phaseExportAuth:
+		content = m.viewExportAuth()
+	case phaseExportPath:
+		content = m.viewExportPath()
+	case phaseImportConfirm:
+		content = m.viewImportConfirm()
+	case phaseImportPath:
+		content = m.viewImportPath()
+	case phaseImportPassword:
+		content = m.viewImportPassword()
 	case phaseHostForm:
 		content = m.viewHostForm()
 	case phaseUserSelect:
@@ -326,17 +382,22 @@ func (m model) View() string {
 // ------------------------------------------------------------------
 
 func (m model) updateSetup(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if key, ok := msg.(tea.KeyMsg); ok && key.String() == "enter" {
-		val := m.input.Value()
-		if len(val) < 8 {
-			m.err = "Master key must be at least 8 characters"
-			return m, nil
+	if key, ok := msg.(tea.KeyMsg); ok {
+		switch key.String() {
+		case "enter":
+			val := m.input.Value()
+			if len(val) < 8 {
+				m.err = "Master key must be at least 8 characters"
+				return m, nil
+			}
+			m.password = []byte(val)
+			m.err = ""
+			m.phase = phaseSetupConfirm
+			m.input = newPasswordInput("Confirm master key...")
+			return m, textinput.Blink
+		case "i":
+			return m.startImportFlow()
 		}
-		m.password = []byte(val)
-		m.err = ""
-		m.phase = phaseSetupConfirm
-		m.input = newPasswordInput("Confirm master key...")
-		return m, textinput.Blink
 	}
 
 	var cmd tea.Cmd
@@ -355,7 +416,7 @@ func (m model) viewSetup() string {
 		b.WriteString(errorStyle.Render("✗ "+m.err) + "\n\n")
 	}
 	b.WriteString(hintStyle.Render("Minimum 8 characters") + "\n")
-	b.WriteString(statusBarStyle.Render("enter confirm • ctrl+c quit"))
+	b.WriteString(statusBarStyle.Render("enter confirm • i import backup • ctrl+c quit"))
 	return boxStyle.Render(b.String())
 }
 
@@ -421,26 +482,31 @@ func (m model) viewSetupConfirm() string {
 // ------------------------------------------------------------------
 
 func (m model) updateUnlock(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if key, ok := msg.(tea.KeyMsg); ok && key.String() == "enter" {
-		val := m.input.Value()
-		encKey, err := vault.Unlock(val)
-		if err != nil {
-			if errors.Is(err, vault.ErrWrongPassword) {
-				m.err = "Incorrect master key"
-			} else {
-				m.err = "Unlock failed"
+	if key, ok := msg.(tea.KeyMsg); ok {
+		switch key.String() {
+		case "enter":
+			val := m.input.Value()
+			encKey, err := vault.Unlock(val)
+			if err != nil {
+				if errors.Is(err, vault.ErrWrongPassword) {
+					m.err = "Incorrect master key"
+				} else {
+					m.err = "Unlock failed"
+				}
+				m.input.Reset()
+				return m, nil
 			}
-			m.input.Reset()
-			return m, nil
+			m.encKey = encKey
+			m.err = ""
+			dm, derr := m.initDashboard()
+			if derr != nil {
+				m.err = "Failed to load host store"
+				return m, nil
+			}
+			return dm, nil
+		case "i":
+			return m.startImportFlow()
 		}
-		m.encKey = encKey
-		m.err = ""
-		dm, derr := m.initDashboard()
-		if derr != nil {
-			m.err = "Failed to load host store"
-			return m, nil
-		}
-		return dm, nil
 	}
 
 	var cmd tea.Cmd
@@ -457,8 +523,298 @@ func (m model) viewUnlock() string {
 	if m.err != "" {
 		b.WriteString(errorStyle.Render("✗ "+m.err) + "\n\n")
 	}
-	b.WriteString(statusBarStyle.Render("enter unlock • ctrl+c quit"))
+	b.WriteString(statusBarStyle.Render("enter unlock • i import backup • ctrl+c quit"))
 	return boxStyle.Render(b.String())
+}
+
+func (m model) startImportFlow() (tea.Model, tea.Cmd) {
+	m.importReturn = m.phase
+	m.phase = phaseImportConfirm
+	m.importErr = ""
+	m.importPath = ""
+	defaultPath, _ := backup.DefaultPath()
+	m.exportDir = defaultPath
+	return m, nil
+}
+
+func (m model) updateImportConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
+	key, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return m, nil
+	}
+
+	switch key.String() {
+	case "y", "enter":
+		defaultPath, err := backup.DefaultPath()
+		if err != nil {
+			m.importErr = "Could not resolve default backup path"
+			return m, nil
+		}
+		m.importPath = defaultPath
+		m.input = newPathInput(defaultPath)
+		m.input.SetValue(defaultPath)
+		m.importErr = ""
+		m.phase = phaseImportPath
+		return m, textinput.Blink
+	case "n", "esc":
+		return m.cancelImport()
+	}
+
+	return m, nil
+}
+
+func (m model) updateImportPath(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if key, ok := msg.(tea.KeyMsg); ok {
+		switch key.String() {
+		case "esc":
+			return m.cancelImport()
+		case "enter":
+			path := strings.TrimSpace(m.input.Value())
+			if path == "" {
+				path = m.importPath
+			}
+			path = expandExportPath(path)
+			if path == "" {
+				m.importErr = "Backup file path is required"
+				return m, nil
+			}
+			m.importPath = path
+			m.input = newPasswordInput("Enter backup master key...")
+			m.importErr = ""
+			m.phase = phaseImportPassword
+			return m, textinput.Blink
+		}
+	}
+
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	return m, cmd
+}
+
+func (m model) updateImportPassword(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if key, ok := msg.(tea.KeyMsg); ok {
+		switch key.String() {
+		case "esc":
+			return m.cancelImport()
+		case "enter":
+			password := m.input.Value()
+			if password == "" {
+				m.importErr = "Backup master key is required"
+				return m, nil
+			}
+
+			if err := backup.VerifyMasterPassword(m.importPath, password); err != nil {
+				if errors.Is(err, vault.ErrWrongPassword) {
+					m.importErr = "Incorrect backup master key"
+				} else {
+					m.importErr = "Import check failed: " + err.Error()
+				}
+				m.input.Reset()
+				return m, nil
+			}
+
+			if err := backup.Import(m.importPath); err != nil {
+				m.importErr = "Import failed: " + err.Error()
+				return m, nil
+			}
+
+			m = m.toLockedSession()
+			m.importPath = ""
+			m.exportDir = ""
+			return m, textinput.Blink
+		}
+	}
+
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	return m, cmd
+}
+
+func (m model) cancelImport() (tea.Model, tea.Cmd) {
+	m.importErr = ""
+	m.importPath = ""
+	switch m.importReturn {
+	case phaseSetup:
+		m.phase = phaseSetup
+		m.input = newPasswordInput("Choose a master key...")
+		return m, textinput.Blink
+	case phaseUnlock:
+		m.phase = phaseUnlock
+		m.input = newPasswordInput("Enter master key...")
+		return m, textinput.Blink
+	default:
+		m.phase = phaseDashboard
+		m.connErr = "Import cancelled"
+		return m, nil
+	}
+}
+
+func (m model) viewImportConfirm() string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("Import Backup") + "\n\n")
+	b.WriteString(subtitleStyle.Render("All current/existing data will be lost.") + "\n")
+	b.WriteString(subtitleStyle.Render("Make sure you've made necessary backups for any important data.") + "\n\n")
+	b.WriteString(inputLabelStyle.Render("Are you sure you want to proceed with the import?") + "\n")
+	b.WriteString(hintStyle.Render("Press y to continue, n to cancel") + "\n\n")
+	if m.importErr != "" {
+		b.WriteString(errorStyle.Render("✗ "+m.importErr) + "\n\n")
+	}
+	b.WriteString(statusBarStyle.Render("y proceed • n cancel • enter proceed • esc cancel"))
+	return boxStyle.Render(b.String())
+}
+
+func (m model) viewImportPath() string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("Import Backup") + "\n")
+	b.WriteString(subtitleStyle.Render("Enter path to backup file") + "\n")
+	b.WriteString(hintStyle.Render("Default: ~/managedssh-export.json") + "\n\n")
+	b.WriteString(inputLabelStyle.Render("Backup File Path") + "\n")
+	b.WriteString(m.input.View() + "\n\n")
+	if m.importErr != "" {
+		b.WriteString(errorStyle.Render("✗ "+m.importErr) + "\n\n")
+	}
+	b.WriteString(statusBarStyle.Render("enter continue • esc cancel"))
+	return boxStyle.Render(b.String())
+}
+
+func (m model) viewImportPassword() string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("Import Backup") + "\n")
+	b.WriteString(subtitleStyle.Render("Enter master key of the backup data") + "\n\n")
+	b.WriteString(inputLabelStyle.Render("Backup Master Key") + "\n")
+	b.WriteString(m.input.View() + "\n\n")
+	if m.importPath != "" {
+		b.WriteString(hintStyle.Render("File: "+m.importPath) + "\n\n")
+	}
+	if m.importErr != "" {
+		b.WriteString(errorStyle.Render("✗ "+m.importErr) + "\n\n")
+	}
+	b.WriteString(statusBarStyle.Render("enter import • esc cancel"))
+	return boxStyle.Render(b.String())
+}
+
+func (m model) updateExportAuth(msg tea.Msg) (tea.Model, tea.Cmd) {
+	key, ok := msg.(tea.KeyMsg)
+	if ok {
+		switch key.String() {
+		case "esc":
+			m.phase = phaseDashboard
+			m.exportErr = ""
+			m.input.Reset()
+			m.connErr = "Backup export cancelled"
+			return m, nil
+		case "enter":
+			val := m.input.Value()
+			unlockKey, err := vault.Unlock(val)
+			if err != nil {
+				if errors.Is(err, vault.ErrWrongPassword) {
+					m.exportErr = "Incorrect master key"
+				} else {
+					m.exportErr = "Master key check failed"
+				}
+				m.input.Reset()
+				return m, nil
+			}
+			vault.ZeroKey(unlockKey)
+			home, err := os.UserHomeDir()
+			if err != nil {
+				m.exportErr = "Could not resolve home directory"
+				return m, nil
+			}
+			m.exportDir = home
+			m.input = newPathInput(home)
+			m.input.SetValue(home)
+			m.exportErr = ""
+			m.phase = phaseExportPath
+			return m, textinput.Blink
+		}
+	}
+
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	return m, cmd
+}
+
+func (m model) updateExportPath(msg tea.Msg) (tea.Model, tea.Cmd) {
+	key, ok := msg.(tea.KeyMsg)
+	if ok {
+		switch key.String() {
+		case "esc":
+			m.phase = phaseDashboard
+			m.exportErr = ""
+			m.input.Reset()
+			m.connErr = "Backup export cancelled"
+			return m, nil
+		case "enter":
+			dir := strings.TrimSpace(m.input.Value())
+			if dir == "" {
+				dir = m.exportDir
+			}
+			dir = expandExportPath(dir)
+			if dir == "" {
+				m.exportErr = "Export directory is required"
+				return m, nil
+			}
+
+			targetPath := backup.ExportPathForDir(dir)
+			if err := backup.Export(targetPath); err != nil {
+				m.exportErr = "Export failed: " + err.Error()
+				return m, nil
+			}
+
+			m.phase = phaseDashboard
+			m.exportErr = ""
+			m.exportDir = ""
+			m.input.Reset()
+			m.connErr = "Exported backup to " + targetPath
+			return m, nil
+		}
+	}
+
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	return m, cmd
+}
+
+func (m model) viewExportAuth() string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("Export Backup") + "\n")
+	b.WriteString(subtitleStyle.Render("Confirm your master key before creating backup.") + "\n\n")
+	b.WriteString(inputLabelStyle.Render("Master Key") + "\n")
+	b.WriteString(m.input.View() + "\n\n")
+	if m.exportErr != "" {
+		b.WriteString(errorStyle.Render("✗ "+m.exportErr) + "\n\n")
+	}
+	b.WriteString(statusBarStyle.Render("enter continue • esc cancel"))
+	return boxStyle.Render(b.String())
+}
+
+func (m model) viewExportPath() string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("Export Backup") + "\n")
+	b.WriteString(subtitleStyle.Render("Choose directory for managedssh-export.json") + "\n")
+	b.WriteString(hintStyle.Render("Default: your home directory") + "\n\n")
+	b.WriteString(inputLabelStyle.Render("Export Directory") + "\n")
+	b.WriteString(m.input.View() + "\n\n")
+	if m.exportErr != "" {
+		b.WriteString(errorStyle.Render("✗ "+m.exportErr) + "\n\n")
+	}
+	b.WriteString(statusBarStyle.Render("enter export • esc cancel"))
+	return boxStyle.Render(b.String())
+}
+
+func expandExportPath(path string) string {
+	if path == "~" || strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return ""
+		}
+		if path == "~" {
+			return home
+		}
+		return filepath.Join(home, strings.TrimPrefix(path, "~/"))
+	}
+	return path
 }
 
 func (m model) updateHostVerifying(msg tea.Msg) (tea.Model, tea.Cmd) {

@@ -62,17 +62,21 @@ func (m model) updateDashboardNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		return m, tea.Quit
 	case "l":
-		vault.ZeroKey(m.encKey)
-		m.encKey = nil
-		m.phase = phaseUnlock
-		m.input.Reset()
-		m.input.Focus()
+		m = m.toLockedSession()
 		return m, textinput.Blink
 	case "c":
 		m.phase = phaseChangeKeyInit
 		m.input = newPasswordInput("Current master key...")
 		m.err = ""
 		return m, textinput.Blink
+	case "x":
+		m.phase = phaseExportAuth
+		m.exportErr = ""
+		m.exportDir = ""
+		m.input = newPasswordInput("Enter master key to export backup...")
+		return m, textinput.Blink
+	case "i":
+		return m.startImportFlow()
 	case "j", "down":
 		if m.hostCursor < len(m.filtered)-1 {
 			m.hostCursor++
@@ -311,7 +315,14 @@ func (m model) viewDashboard() string {
 		leftW = contentW * 55 / 100
 		rightW = contentW - leftW - 1
 
-		cmdH = 6
+		cmdContent := m.renderCommands(rightW - 4)
+		// Commands panel must be tall enough for all lines, otherwise lipgloss will
+		// grow it and break side-by-side alignment.
+		cmdH = lipgloss.Height(cmdContent) + 2
+		if cmdH < 6 {
+			cmdH = 6
+		}
+
 		detailH = panelH - cmdH - 2
 		if detailH < 5 {
 			detailH = 5
@@ -325,10 +336,16 @@ func (m model) viewDashboard() string {
 		detailContent := m.renderDetails()
 		detailPanel := panelBorder.Width(rightW).Height(detailH).Render(panelTitleStyle.Render(" Server Details") + "\n\n" + detailContent)
 
-		cmdContent := m.renderCommands(rightW - 4)
 		cmdPanel := panelBorder.Width(rightW).Height(cmdH).Render(panelTitleStyle.Render(" Commands") + "\n\n" + cmdContent)
 
 		rightPanel := lipgloss.JoinVertical(lipgloss.Left, detailPanel, cmdPanel)
+		leftPanelHeight := lipgloss.Height(leftPanel)
+		rightPanelHeight := lipgloss.Height(rightPanel)
+		if rightPanelHeight < leftPanelHeight {
+			rightPanel = lipgloss.NewStyle().Height(leftPanelHeight).Render(rightPanel)
+		} else if rightPanelHeight > leftPanelHeight {
+			leftPanel = lipgloss.NewStyle().Height(rightPanelHeight).Render(leftPanel)
+		}
 		panels = lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, " ", rightPanel)
 	}
 
@@ -478,6 +495,7 @@ func (m model) renderCommands(maxW int) string {
 	}
 	return "  " + pad(cmd("/", "Search"), col) + cmd("l", "Lock Session") + "\n" +
 		"  " + pad(cmd("a", "Add"), col) + cmd("c", "Change Master Key") + "\n" +
+		"  " + pad(cmd("x", "Export Backup"), col) + cmd("i", "Import Backup") + "\n" +
 		"  " + pad(cmd("d", "Delete"), col) + cmd("⏎", "Connect") + "\n" +
 		"  " + pad(cmd("e", "Edit"), col) + cmd("q", "Quit")
 }
