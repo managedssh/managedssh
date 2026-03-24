@@ -78,4 +78,10 @@ var (
 
 	cmdDescStyle = lipgloss.NewStyle().
 			Foreground(text)
+
+	lipHealthGreen   = lipgloss.NewStyle().Foreground(lipgloss.Color("#22C55E"))
+	lipHealthYellow  = lipgloss.NewStyle().Foreground(lipgloss.Color("#F59E0B"))
+	lipHealthRed     = lipgloss.NewStyle().Foreground(lipgloss.Color("#EF4444"))
+	lipHealthPending = lipgloss.NewStyle().Foreground(lipgloss.Color("#60A5FA"))
+	lipHealthUnknown = lipgloss.NewStyle().Foreground(subtle)
 )

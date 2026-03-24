@@ -77,6 +77,12 @@ func (m model) updateDashboardNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, textinput.Blink
 	case "i":
 		return m.startImportFlow()
+	case "h":
+		if m.healthChecking {
+			return m, nil
+		}
+		m.healthChecking = true
+		return m, healthCheckAllCmd(m.store.Hosts, m.encKey)
 	case "j", "down":
 		if m.hostCursor < len(m.filtered)-1 {
 			m.hostCursor++
@@ -356,6 +362,9 @@ func (m model) viewDashboard() string {
 	}
 
 	view := title + "\n" + searchLine + "\n\n" + panels
+	if m.healthChecking {
+		view += "\n" + hintStyle.Render(" Running health check across all saved hosts...")
+	}
 
 	if m.connErr != "" {
 		errBanner := errorStyle.Render(" ✗ " + m.connErr)
@@ -377,7 +386,7 @@ func (m model) renderHostList(maxW, maxH int) string {
 	}
 
 	// Column widths — adapt to available space.
-	available := maxW - 3
+	available := maxW - 6
 	if available < 10 {
 		available = 10
 	}
@@ -402,6 +411,7 @@ func (m model) renderHostList(maxW, maxH int) string {
 
 	for i := offset; i < end; i++ {
 		h := m.filtered[i]
+		indicator := m.healthIndicator(m.hostHealth(h.ID))
 
 		cursor := "  "
 		style := lipgloss.NewStyle().Foreground(text)
@@ -420,7 +430,7 @@ func (m model) renderHostList(maxW, maxH int) string {
 		}
 		hostColStr := lipgloss.NewStyle().Width(colHost).MaxWidth(colHost).Render(hostStr)
 
-		line := fmt.Sprintf("%s%s %s", cursor, aliasStr, hostColStr)
+		line := fmt.Sprintf("%s%s %s %s", cursor, indicator, aliasStr, hostColStr)
 		b.WriteString(style.Render(line))
 		if i < end-1 {
 			b.WriteByte('\n')
@@ -469,6 +479,7 @@ func (m model) renderDetails() string {
 	}
 
 	lines := []string{
+		render("Health", healthLabel(m.hostHealth(h.ID))),
 		render("Alias", h.Alias),
 		render("Host", h.Hostname),
 		render("Users", strings.Join(users, ", ")),
@@ -502,9 +513,9 @@ func (m model) renderCommands(maxW int) string {
 	return "  " + pad(cmd("/", "Search"), col) + cmd("l", "Lock Session") + "\n" +
 		"  " + pad(cmd("a", "Add"), col) + cmd("c", "Change Master Key") + "\n" +
 		"  " + pad(cmd("e", "Edit"), col) + cmd("y", "Duplicate") + "\n" +
-		"  " + pad(cmd("d", "Delete"), col) + cmd("⏎", "Connect") + "\n" +
+		"  " + pad(cmd("d", "Delete"), col) + cmd("h", "Health Check") + "\n" +
 		"  " + pad(cmd("x", "Export Backup"), col) + cmd("i", "Import Backup") + "\n" +
-		"  " + cmd("q", "Quit")
+		"  " + pad(cmd("⏎", "Connect"), col) + cmd("q", "Quit")
 }
 
 func (m model) updateUserSelect(msg tea.Msg) (tea.Model, tea.Cmd) {

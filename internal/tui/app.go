@@ -48,6 +48,9 @@ type hostVerifyDoneMsg struct {
 type hostTrustDoneMsg struct{ err error }
 type saveKeyPassDoneMsg struct{ err error }
 type dashboardTrustDoneMsg struct{ err error }
+type healthCheckDoneMsg struct {
+	statuses map[string]hostHealthStatus
+}
 
 type formUserConfig struct {
 	Username            string
@@ -75,20 +78,22 @@ type model struct {
 	err      string
 
 	// Dashboard
-	store         *host.Store
-	filtered      []host.Host
-	hostCursor    int
-	search        textinput.Model
-	searchFocused bool
-	confirmDelete bool
-	connErr       string
-	exportErr     string
-	exportDir     string
-	importErr     string
-	importPath    string
-	importReturn  phase
-	userCursor    int
-	selectedHost  host.Host
+	store          *host.Store
+	filtered       []host.Host
+	hostCursor     int
+	search         textinput.Model
+	searchFocused  bool
+	confirmDelete  bool
+	connErr        string
+	exportErr      string
+	exportDir      string
+	importErr      string
+	importPath     string
+	importReturn   phase
+	userCursor     int
+	selectedHost   host.Host
+	healthChecking bool
+	healthStatuses map[string]hostHealthStatus
 
 	// Host form
 	formInputs             []textinput.Model
@@ -192,6 +197,8 @@ func (m model) initDashboard() (model, error) {
 	m.hostCursor = 0
 	m.confirmDelete = false
 	m.connErr = ""
+	m.healthChecking = false
+	m.healthStatuses = make(map[string]hostHealthStatus)
 	m.filtered = store.Filter("")
 	m.phase = phaseDashboard
 	return m, nil
@@ -290,6 +297,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m.connectSSHWithResolved(m.connectHost, m.connectUser, m.connectResolved, m.pendingKeyPassphrase, m.pendingKeyPassSave)
+	case healthCheckDoneMsg:
+		m.healthChecking = false
+		m.healthStatuses = msg.statuses
+		return m, nil
 	}
 
 	switch m.phase {

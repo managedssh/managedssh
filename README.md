@@ -66,6 +66,7 @@ make run
 - e: edit selected host
 - y: duplicate selected host
 - d: delete selected host (with confirmation)
+- h: run health check for all saved hosts (green/yellow/red indicators)
 - enter: connect to selected host
 - x: export backup
 - i: import backup
