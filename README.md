@@ -47,6 +47,10 @@ make build
 ```bash
 make run
 ```
+3. Install:
+```bash
+make install
+```
 
 3. First launch flow:
 - Create a master key.
