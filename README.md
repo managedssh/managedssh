@@ -47,8 +47,12 @@ make build
 ```bash
 make run
 ```
+3. Install:
+```bash
+make install
+```
 
-3. First launch flow:
+4. First launch flow:
 - Create a master key.
 - Add a host and one or more users.
 - Confirm host key trust if prompted.
