@@ -106,6 +106,7 @@ type model struct {
 	formDefaultUser        string
 	formUserConfigs        []formUserConfig
 	formUserCursor         int
+	formScroll             int
 	formPathSuggestions    []string
 	formPathSuggestIndex   int
 	pendingHost            host.Host

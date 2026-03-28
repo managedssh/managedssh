@@ -111,6 +111,7 @@ func (m model) startHostForm(editID string, duplicate bool) (model, tea.Cmd) {
 	m.formDefaultUser = ""
 	m.formUserConfigs = nil
 	m.formUserCursor = 0
+	m.formScroll = 0
 	m.formPathSuggestions = nil
 	m.formPathSuggestIndex = 0
 
@@ -180,6 +181,12 @@ func (m model) updateHostForm(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cyclePathSuggestion(-1) {
 				return m, nil
 			}
+		case "pgdown":
+			m.formScroll += 4
+			return m, nil
+		case "pgup":
+			m.formScroll = max(0, m.formScroll-4)
+			return m, nil
 		case "left", "h":
 			switch m.formFocus {
 			case fSelectedUser:
@@ -250,6 +257,12 @@ func (m model) cycleFormFocus(dir int) (tea.Model, tea.Cmd) {
 	}
 	cur = (cur + dir + len(focuses)) % len(focuses)
 	m.formFocus = focuses[cur]
+	if m.formFocus >= fSelectedUser {
+		// Auto-jump to lower section when entering per-user auth controls.
+		m.formScroll = 9999
+	} else {
+		m.formScroll = 0
+	}
 
 	if idx := formInputIdx(m.formFocus); idx >= 0 {
 		m.refreshPathSuggestions()
@@ -387,7 +400,17 @@ func (m model) viewHostForm() string {
 
 	formW := 90
 	formH := 38
-	colW := (formW - 6) / 2
+	contentW := formW - 6
+	colGap := 2
+	colW := (contentW - colGap) / 2
+
+	// Keep input widths in sync with the rendered layout so fields use available space.
+	m.formInputs[0].Width = colW
+	m.formInputs[1].Width = colW
+	m.formInputs[2].Width = colW
+	m.formInputs[3].Width = colW
+	m.formInputs[4].Width = min(10, colW)
+	m.formInputs[5].Width = contentW
 
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("📝 "+title) + "\n\n")
@@ -424,7 +447,7 @@ func (m model) viewHostForm() string {
 	b.WriteString(hintStyle.Render("  Comma-separated usernames. Example: main, ubuntu, deploy") + "\n\n")
 
 	if len(m.formUserConfigs) > 0 {
-		b.WriteString(m.renderSelectedUserSection())
+		b.WriteString(m.renderSelectedUserSection(contentW))
 	} else {
 		b.WriteString(hintStyle.Render("  Type usernames above to configure per-user auth settings.") + "\n")
 	}
@@ -433,18 +456,35 @@ func (m model) viewHostForm() string {
 		b.WriteString("\n" + errorStyle.Render("✗ "+m.formErr) + "\n")
 	}
 
-	b.WriteString("\n" + statusBarStyle.Render("tab/↑↓ navigate • space default user • ←→ adjust • enter save • esc cancel"))
+	b.WriteString("\n" + statusBarStyle.Render("tab/↑↓ navigate • space default user • ←→ adjust • pgup/pgdn scroll • enter save • esc cancel"))
 
 	content := b.String()
-	lines := strings.Split(content, "\n")
-	for len(lines) < formH {
-		lines = append(lines, "")
-	}
-	content = strings.Join(lines[:formH], "\n")
+	content = m.renderFormViewport(content, formH)
 	return boxStyle.Width(formW).Render(content)
 }
 
-func (m model) renderSelectedUserSection() string {
+func (m model) renderFormViewport(content string, height int) string {
+	lines := strings.Split(content, "\n")
+	if len(lines) <= height {
+		for len(lines) < height {
+			lines = append(lines, "")
+		}
+		return strings.Join(lines, "\n")
+	}
+
+	maxOffset := len(lines) - height
+	offset := m.formScroll
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > maxOffset {
+		offset = maxOffset
+	}
+
+	return strings.Join(lines[offset:offset+height], "\n")
+}
+
+func (m model) renderSelectedUserSection(contentW int) string {
 	user := m.currentFormUser()
 	if user == nil {
 		return ""
@@ -463,7 +503,9 @@ func (m model) renderSelectedUserSection() string {
 	}
 	b.WriteString("\n")
 
-	cardBorder := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(highlight).Padding(1, 2).Width(80)
+	cardBorder := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(highlight).Padding(1, 2).Width(contentW)
+	cardContentW := max(20, contentW-6)
+	m.formInputs[6].Width = cardContentW
 
 	var card strings.Builder
 	headerLabel := "👤 " + user.Username
@@ -502,7 +544,7 @@ func (m model) renderSelectedUserSection() string {
 		card.WriteString(credLabel + "\n")
 		card.WriteString(m.formInputs[6].View() + "\n")
 		card.WriteString(hintStyle.Render("  Key path or paste private key") + "\n")
-		card.WriteString(m.renderPathSuggestions())
+		card.WriteString(m.renderPathSuggestions(cardContentW))
 		if m.formEditing != "" && (user.ExistingKeyPath != "" || len(user.ExistingEncKey) > 0) {
 			card.WriteString(hintStyle.Render("  Leave empty to keep current SSH key") + "\n")
 		}
@@ -727,6 +769,7 @@ func (m *model) acceptPathSuggestion() bool {
 	}
 	suggestion := m.formPathSuggestions[m.formPathSuggestIndex]
 	input.SetValue(suggestion)
+	input.CursorEnd()
 	if m.formFocus == fSelectedUserCredential {
 		m.storeSelectedUserCredentialInput()
 	}
@@ -850,20 +893,36 @@ func identityConflictMessage(aliasConflict, hostnameConflict bool) string {
 	}
 }
 
-func (m model) renderPathSuggestions() string {
+func (m model) renderPathSuggestions(contentW int) string {
 	if len(m.formPathSuggestions) == 0 {
 		return ""
 	}
-	var parts []string
+	itemW := max(20, contentW-2)
+	var b strings.Builder
+	b.WriteString(hintStyle.Render("  Suggestions (tab accept • ctrl+n/p select):") + "\n")
+
 	for i, s := range m.formPathSuggestions {
+		label := truncateForWidth(s, itemW-4)
+		prefix := "  "
 		style := lipgloss.NewStyle().Foreground(subtle)
 		if i == m.formPathSuggestIndex {
-			style = lipgloss.NewStyle().Foreground(highlight).Bold(true)
-			s = "> " + s
-		} else {
-			s = "  " + s
+			prefix = "▸ "
+			style = lipgloss.NewStyle().Foreground(lipgloss.Color("#111827")).Background(highlight).Bold(true).Padding(0, 1)
 		}
-		parts = append(parts, style.Render(s))
+		line := prefix + label
+		b.WriteString("  " + style.Render(line) + "\n")
 	}
-	return "  " + strings.Join(parts, "   ") + "\n"
+
+	return b.String()
+}
+
+func truncateForWidth(s string, width int) string {
+	if width <= 3 {
+		return s
+	}
+	r := []rune(s)
+	if len(r) <= width {
+		return s
+	}
+	return string(r[:width-3]) + "..."
 }
