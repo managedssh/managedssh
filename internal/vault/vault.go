@@ -36,6 +36,12 @@ type meta struct {
 }
 
 func Dir() (string, error) {
+	// Respect XDG_CONFIG_HOME if set, otherwise fall back to ~/.config
+	configHome := os.Getenv("XDG_CONFIG_HOME")
+	if configHome != "" {
+		return filepath.Join(configHome, "managedssh"), nil
+	}
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err

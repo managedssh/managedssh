@@ -13,6 +13,8 @@ import (
 func TestExportImportRoundTrip(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	// Ensure XDG_CONFIG_HOME is not set to use the fallback path
+	t.Setenv("XDG_CONFIG_HOME", "")
 
 	configDir := filepath.Join(home, ".config", "managedssh")
 	if err := os.MkdirAll(configDir, 0700); err != nil {
@@ -72,6 +74,8 @@ func TestExportImportRoundTrip(t *testing.T) {
 func TestVerifyMasterPassword(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	// Ensure XDG_CONFIG_HOME is not set to use the fallback path
+	t.Setenv("XDG_CONFIG_HOME", "")
 
 	configDir := filepath.Join(home, ".config", "managedssh")
 	if err := os.MkdirAll(configDir, 0700); err != nil {
@@ -99,6 +103,28 @@ func TestVerifyMasterPassword(t *testing.T) {
 	}
 	if err := VerifyMasterPassword(bundlePath, "wrong-password"); err == nil {
 		t.Fatalf("expected wrong password failure")
+	}
+}
+
+func TestXDGConfigHome(t *testing.T) {
+	home := t.TempDir()
+	xdgConfig := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", xdgConfig)
+
+	// Create config dir in XDG_CONFIG_HOME
+	configDir := filepath.Join(xdgConfig, "managedssh")
+	if err := os.MkdirAll(configDir, 0700); err != nil {
+		t.Fatalf("mkdir config dir: %v", err)
+	}
+
+	// vault.Dir() should return XDG_CONFIG_HOME path
+	dir, err := vault.Dir()
+	if err != nil {
+		t.Fatalf("vault.Dir: %v", err)
+	}
+	if dir != configDir {
+		t.Fatalf("expected %s, got %s", configDir, dir)
 	}
 }
 

@@ -77,8 +77,9 @@ make install
 
 ## Security Model (Brief)
 
-- Vault metadata is stored in ~/.config/managedssh/vault.json.
-- Host data is stored in ~/.config/managedssh/hosts.json.
+- Configuration is stored in `$XDG_CONFIG_HOME/managedssh/` (or `~/.config/managedssh/` if `XDG_CONFIG_HOME` is not set).
+  - Vault metadata is stored in `vault.json`.
+  - Host data is stored in `hosts.json`.
 - Sensitive data is encrypted and handled as byte slices with explicit zeroing where possible.
 - Host trust follows known_hosts behavior and requires explicit trust for unknown keys.
 
