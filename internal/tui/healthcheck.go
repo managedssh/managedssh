@@ -9,9 +9,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/managedssh/managedssh/internal/host"
-	"github.com/managedssh/managedssh/internal/sshclient"
-	"github.com/managedssh/managedssh/internal/vault"
+	"github.com/mylovelytools/managedssh/internal/host"
+	"github.com/mylovelytools/managedssh/internal/sshclient"
+	"github.com/mylovelytools/managedssh/internal/vault"
 )
 
 type hostHealthStatus int

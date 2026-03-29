@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/managedssh/managedssh/internal/vault"
+	"github.com/mylovelytools/managedssh/internal/vault"
 )
 
 const (

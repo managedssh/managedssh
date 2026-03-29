@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/managedssh/managedssh/internal/vault"
+	"github.com/mylovelytools/managedssh/internal/vault"
 )
 
 func TestExportImportRoundTrip(t *testing.T) {

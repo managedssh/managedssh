@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/managedssh/managedssh/cmd"
+	"github.com/mylovelytools/managedssh/cmd"
 )
 
 func main() {

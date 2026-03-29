@@ -12,10 +12,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"golang.org/x/crypto/ssh"
 
-	"github.com/managedssh/managedssh/internal/backup"
-	"github.com/managedssh/managedssh/internal/host"
-	"github.com/managedssh/managedssh/internal/sshclient"
-	"github.com/managedssh/managedssh/internal/vault"
+	"github.com/mylovelytools/managedssh/internal/backup"
+	"github.com/mylovelytools/managedssh/internal/host"
+	"github.com/mylovelytools/managedssh/internal/sshclient"
+	"github.com/mylovelytools/managedssh/internal/vault"
 )
 
 type phase int

@@ -12,8 +12,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/managedssh/managedssh/internal/host"
-	"github.com/managedssh/managedssh/internal/vault"
+	"github.com/mylovelytools/managedssh/internal/host"
+	"github.com/mylovelytools/managedssh/internal/vault"
 )
 
 const (

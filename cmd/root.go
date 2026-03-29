@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"github.com/managedssh/managedssh/internal/tui"
+	"github.com/mylovelytools/managedssh/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -25,7 +25,7 @@ Interface Controls:
 	enter       connect to selected host
 	x           export backup
 	i           import backup`,
-	Args:  cobra.NoArgs,
+	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return tui.Start()
 	},

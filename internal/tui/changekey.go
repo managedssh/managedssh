@@ -5,7 +5,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/managedssh/managedssh/internal/vault"
+	"github.com/mylovelytools/managedssh/internal/vault"
 )
 
 func (m model) updateChangeKeyInit(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -43,7 +43,7 @@ func (m model) viewChangeKeyInit() string {
 	b.WriteString(inputLabelStyle.Render("Current Key") + "\n")
 	b.WriteString(m.input.View() + "\n\n")
 	if m.err != "" {
-		b.WriteString(errorStyle.Render("✗ " + m.err) + "\n\n")
+		b.WriteString(errorStyle.Render("✗ "+m.err) + "\n\n")
 	}
 	b.WriteString(statusBarStyle.Render("enter confirm • esc cancel • ctrl+c quit"))
 	return boxStyle.Render(b.String())
@@ -83,7 +83,7 @@ func (m model) viewChangeKeyNew() string {
 	b.WriteString(inputLabelStyle.Render("New Key") + "\n")
 	b.WriteString(m.input.View() + "\n\n")
 	if m.err != "" {
-		b.WriteString(errorStyle.Render("✗ " + m.err) + "\n\n")
+		b.WriteString(errorStyle.Render("✗ "+m.err) + "\n\n")
 	}
 	b.WriteString(hintStyle.Render("Minimum 8 characters") + "\n")
 	b.WriteString(statusBarStyle.Render("enter confirm • esc cancel • ctrl+c quit"))
@@ -136,7 +136,7 @@ func (m model) updateChangeKeyConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 				rewrap(&h.DefaultEncKey)
 				rewrap(&h.DefaultEncKeyPass)
 				rewrap(&h.EncPassword)
-				
+
 				for j := range h.Accounts {
 					acc := &h.Accounts[j]
 					rewrap(&acc.EncPassword)
@@ -174,7 +174,7 @@ func (m model) viewChangeKeyConfirm() string {
 	b.WriteString(inputLabelStyle.Render("Confirm Key") + "\n")
 	b.WriteString(m.input.View() + "\n\n")
 	if m.err != "" {
-		b.WriteString(errorStyle.Render("✗ " + m.err) + "\n\n")
+		b.WriteString(errorStyle.Render("✗ "+m.err) + "\n\n")
 	}
 	b.WriteString(statusBarStyle.Render("enter confirm • esc go back • ctrl+c quit"))
 	return boxStyle.Render(b.String())

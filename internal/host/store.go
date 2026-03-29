@@ -230,8 +230,15 @@ func (h *Host) Normalize() {
 		}
 	}
 	for i := range accounts {
-		if accounts[i].UseDefault || accounts[i].AuthType == "" {
-			accounts[i].UseDefault = false
+		if accounts[i].UseDefault {
+			accounts[i].AuthType = ""
+			accounts[i].EncPassword = nil
+			accounts[i].KeyPath = ""
+			accounts[i].EncKey = nil
+			accounts[i].EncKeyPass = nil
+			continue
+		}
+		if accounts[i].AuthType == "" {
 			accounts[i].AuthType = h.DefaultAuthType
 			if accounts[i].AuthType == "" {
 				accounts[i].AuthType = "key"

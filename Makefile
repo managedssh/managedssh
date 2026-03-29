@@ -11,7 +11,7 @@ help:
 	@printf "  make fmt      Format Go files\n"
 	@printf "  make tidy     Tidy Go modules\n"
 	@printf "  make install  Install to GOBIN/GOPATH/bin, or ~/.local/bin fallback\n"
-	@printf "  make clean    Remove the built binary\n"
+	@printf "  make clean    Remove build artifacts and Go caches\n"
 
 build:
 	go build -o $(APP) .
@@ -44,3 +44,6 @@ install:
 
 clean:
 	rm -f $(APP)
+	rm -f *.test *.out coverage.out
+	rm -rf dist bin
+	go clean -cache -testcache -fuzzcache -modcache

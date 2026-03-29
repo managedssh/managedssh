@@ -1,4 +1,4 @@
-module github.com/managedssh/managedssh
+module github.com/mylovelytools/managedssh
 
 go 1.26.1
 
