@@ -1,0 +1,96 @@
+.TH MANAGEDSSH 1 "March 2026" "managedssh 1.1.1" "User Commands"
+.SH NAME
+managedssh \- terminal-first SSH connection manager with encrypted credential storage
+.SH SYNOPSIS
+.B managedssh
+.br
+.B managedssh
+.RB [ --help ]
+.SH DESCRIPTION
+.B managedssh
+is an interactive terminal application for organizing SSH hosts, storing
+credentials in an encrypted local vault, and launching SSH sessions.
+
+At startup, the application opens a text user interface (TUI). On first launch,
+you create a master key used to protect sensitive data at rest.
+.SH OPTIONS
+.B managedssh
+does not provide custom command-line options.
+.TP
+.BR -h , " --help"
+Show help for
+.B managedssh
+and exit.
+.SH INTERFACE CONTROLS
+The dashboard supports the following keys:
+.TP
+.B q
+Quit.
+.TP
+.B l
+Lock vault.
+.TP
+.B c
+Change master key.
+.TP
+.B /
+Focus search.
+.TP
+.B esc
+Clear search or cancel current context.
+.TP
+.B j / k
+Move selection (arrow keys also supported).
+.TP
+.B a
+Add host.
+.TP
+.B e
+Edit selected host.
+.TP
+.B y
+Duplicate selected host.
+.TP
+.B d
+Delete selected host (with confirmation).
+.TP
+.B h
+Run health check for all saved hosts.
+.TP
+.B enter
+Connect to selected host.
+.TP
+.B x
+Export backup.
+.TP
+.B i
+Import backup.
+.SH FILES
+.TP
+.B $XDG_CONFIG_HOME/managedssh/
+Configuration directory. If
+.B XDG_CONFIG_HOME
+is not set, the default is
+.BR ~/.config/managedssh/ .
+.TP
+.B vault.json
+Vault metadata.
+.TP
+.B hosts.json
+Saved host and account data.
+.TP
+.B ~/.ssh/known_hosts
+Used for host key verification and trust decisions.
+.SH SECURITY
+Secrets are encrypted at rest using a key derived from your master key.
+Host key verification uses OpenSSH known_hosts behavior, requiring explicit
+trust for unknown hosts.
+.SH EXIT STATUS
+.B managedssh
+returns 0 on success and non-zero on error.
+.SH LICENSE
+GNU Affero General Public License v3.0 or later.
+.SH SEE ALSO
+.BR ssh (1),
+.BR ssh_config (5),
+.BR known_hosts (5)

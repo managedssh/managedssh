@@ -33,3 +33,9 @@ credentials.enc
 .DS_Store
 Thumbs.db
 managedssh
+
+# aur package
+PKGBUILD
+.SRCINFO
+Dockerfile
+docker-compose.yml
