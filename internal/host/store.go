@@ -92,11 +92,7 @@ func (s *Store) Save() error {
 	if err != nil {
 		return err
 	}
-	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, s.path)
+	return atomicWrite(s.path, data, 0600)
 }
 
 func (s *Store) Add(h Host) error {
@@ -230,8 +226,15 @@ func (h *Host) Normalize() {
 		}
 	}
 	for i := range accounts {
-		if accounts[i].UseDefault || accounts[i].AuthType == "" {
-			accounts[i].UseDefault = false
+		if accounts[i].UseDefault {
+			accounts[i].AuthType = ""
+			accounts[i].EncPassword = nil
+			accounts[i].KeyPath = ""
+			accounts[i].EncKey = nil
+			accounts[i].EncKeyPass = nil
+			continue
+		}
+		if accounts[i].AuthType == "" {
 			accounts[i].AuthType = h.DefaultAuthType
 			if accounts[i].AuthType == "" {
 				accounts[i].AuthType = "key"
@@ -395,4 +398,45 @@ func cloneBytes(src []byte) []byte {
 	out := make([]byte, len(src))
 	copy(out, src)
 	return out
+}
+
+func atomicWrite(path string, data []byte, perm os.FileMode) error {
+	tmpFile, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmpFile.Name()
+	closed := false
+	defer func() {
+		if !closed {
+			_ = tmpFile.Close()
+		}
+		_ = os.Remove(tmpPath)
+	}()
+
+	if err := tmpFile.Chmod(perm); err != nil {
+		return err
+	}
+	if _, err := tmpFile.Write(data); err != nil {
+		return err
+	}
+	if err := tmpFile.Sync(); err != nil {
+		return err
+	}
+	if err := tmpFile.Close(); err != nil {
+		return err
+	}
+	closed = true
+
+	if err := os.Rename(tmpPath, path); err != nil {
+		return err
+	}
+
+	dir, err := os.Open(filepath.Dir(path))
+	if err == nil {
+		_ = dir.Sync()
+		_ = dir.Close()
+	}
+
+	return nil
 }

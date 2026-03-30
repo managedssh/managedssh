@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"os/exec"
+	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -28,9 +30,48 @@ func healthCheckAllCmd(hosts []host.Host, encKey []byte) tea.Cmd {
 	copy(copiedHosts, hosts)
 	return func() tea.Msg {
 		statuses := make(map[string]hostHealthStatus, len(copiedHosts))
-		for _, h := range copiedHosts {
-			statuses[h.ID] = checkHostHealth(h, encKey)
+		if len(copiedHosts) == 0 {
+			return healthCheckDoneMsg{statuses: statuses}
 		}
+
+		workerCount := runtime.GOMAXPROCS(0)
+		if workerCount < 1 {
+			workerCount = 1
+		}
+		if workerCount > len(copiedHosts) {
+			workerCount = len(copiedHosts)
+		}
+
+		type result struct {
+			hostID string
+			status hostHealthStatus
+		}
+
+		jobs := make(chan host.Host, len(copiedHosts))
+		results := make(chan result, len(copiedHosts))
+
+		var wg sync.WaitGroup
+		wg.Add(workerCount)
+		for i := 0; i < workerCount; i++ {
+			go func() {
+				defer wg.Done()
+				for h := range jobs {
+					results <- result{hostID: h.ID, status: checkHostHealth(h, encKey)}
+				}
+			}()
+		}
+
+		for _, h := range copiedHosts {
+			jobs <- h
+		}
+		close(jobs)
+
+		wg.Wait()
+		close(results)
+		for r := range results {
+			statuses[r.hostID] = r.status
+		}
+
 		return healthCheckDoneMsg{statuses: statuses}
 	}
 }
@@ -77,7 +118,8 @@ func checkHostHealth(h host.Host, encKey []byte) hostHealthStatus {
 			keyPassphrase = dec
 		}
 
-		err := sshclient.Verify(sshclient.VerifyConfig{
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		err := sshclient.VerifyWithContext(ctx, sshclient.VerifyConfig{
 			Host:          h.Hostname,
 			Port:          h.Port,
 			User:          username,
@@ -86,6 +128,7 @@ func checkHostHealth(h host.Host, encKey []byte) hostHealthStatus {
 			KeyData:       keyData,
 			KeyPassphrase: keyPassphrase,
 		})
+		cancel()
 		zeroBytes(password)
 		zeroBytes(keyData)
 		zeroBytes(keyPassphrase)

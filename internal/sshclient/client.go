@@ -1,6 +1,7 @@
 package sshclient
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -19,6 +20,9 @@ import (
 	"golang.org/x/term"
 )
 
+const defaultDialTimeout = 10 * time.Second
+
+// VerifyConfig holds SSH verification connection inputs.
 type VerifyConfig struct {
 	Host          string
 	Port          int
@@ -29,6 +33,7 @@ type VerifyConfig struct {
 	KeyPassphrase []byte
 }
 
+// UnknownHostError indicates a host key was not yet trusted.
 type UnknownHostError struct {
 	Host           string
 	Address        string
@@ -37,6 +42,7 @@ type UnknownHostError struct {
 	KnownHostsLine string
 }
 
+// KeyPassphraseRequiredError indicates a key is encrypted but no passphrase was provided.
 type KeyPassphraseRequiredError struct{}
 
 func (e *KeyPassphraseRequiredError) Error() string {
@@ -67,14 +73,26 @@ func (s *Session) SetStdin(r io.Reader)  { s.stdin = r }
 func (s *Session) SetStdout(w io.Writer) { s.stdout = w }
 func (s *Session) SetStderr(w io.Writer) { s.stderr = w }
 
+// Run executes the SSH session with a background context.
 func (s *Session) Run() error {
+	return s.RunWithContext(context.Background())
+}
+
+// RunWithContext executes the SSH session and honors context cancellation.
+func (s *Session) RunWithContext(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	dialCtx, cancel := withDefaultTimeout(ctx)
+	defer cancel()
+
 	defer s.zeroPassword()
 	defer s.zeroKeyData()
 	defer s.zeroKeyPassphrase()
 
 	authMethods, err := buildAuthMethods(s.Password, s.KeyPath, s.KeyData, s.KeyPassphrase)
 	if err != nil {
-		return err
+		return fmt.Errorf("build auth methods: %w", err)
 	}
 	defer closeAuthResources(authMethods)
 
@@ -87,13 +105,14 @@ func (s *Session) Run() error {
 		User:            s.User,
 		Auth:            flattenAuthMethods(authMethods),
 		HostKeyCallback: hostKeyCallback,
-		Timeout:         10 * time.Second,
 	}
 
 	addr := net.JoinHostPort(s.Host, strconv.Itoa(s.Port))
-	fmt.Fprintf(s.stdout, "Connecting to %s@%s ...\r\n", s.User, addr)
+	if _, err := fmt.Fprintf(s.stdout, "Connecting to %s@%s ...\r\n", s.User, addr); err != nil {
+		return fmt.Errorf("write connect banner: %w", err)
+	}
 
-	client, err := ssh.Dial("tcp", addr, config)
+	client, err := dialSSHClientWithContext(dialCtx, addr, config)
 	if err != nil {
 		return fmt.Errorf("connection failed: %w", err)
 	}
@@ -138,20 +157,42 @@ func (s *Session) Run() error {
 	}
 
 	sigCh := make(chan os.Signal, 1)
+	sigDone := make(chan struct{})
 	signal.Notify(sigCh, syscall.SIGWINCH)
 	go func() {
-		for range sigCh {
-			if nw, nh, err := term.GetSize(fd); err == nil {
-				_ = session.WindowChange(nh, nw)
+		for {
+			select {
+			case <-sigDone:
+				return
+			case <-sigCh:
+				if nw, nh, err := term.GetSize(fd); err == nil {
+					_ = session.WindowChange(nh, nw)
+				}
 			}
 		}
 	}()
 	defer func() {
 		signal.Stop(sigCh)
-		close(sigCh)
+		close(sigDone)
 	}()
 
-	return session.Wait()
+	waitErrCh := make(chan error, 1)
+	go func() {
+		waitErrCh <- session.Wait()
+	}()
+
+	select {
+	case <-ctx.Done():
+		if err := client.Close(); err != nil {
+			return fmt.Errorf("close SSH client after cancellation: %w", err)
+		}
+		return fmt.Errorf("session canceled: %w", ctx.Err())
+	case err := <-waitErrCh:
+		if err != nil {
+			return fmt.Errorf("wait for SSH session: %w", err)
+		}
+		return nil
+	}
 }
 
 func (s *Session) zeroPassword() {
@@ -182,18 +223,22 @@ func (s *Session) zeroKeyPassphrase() {
 func buildHostKeyCallback() (ssh.HostKeyCallback, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("resolve user home directory: %w", err)
 	}
 	khPath := filepath.Join(home, ".ssh", "known_hosts")
 	if _, err := os.Stat(khPath); os.IsNotExist(err) {
 		if err := os.MkdirAll(filepath.Dir(khPath), 0700); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("create known_hosts directory: %w", err)
 		}
 		if err := os.WriteFile(khPath, nil, 0600); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("create known_hosts file: %w", err)
 		}
 	}
-	return knownhosts.New(khPath)
+	cb, err := knownhosts.New(khPath)
+	if err != nil {
+		return nil, fmt.Errorf("load known_hosts callback: %w", err)
+	}
+	return cb, nil
 }
 
 func buildVerifyHostKeyCallback() (ssh.HostKeyCallback, error) {
@@ -319,6 +364,9 @@ func loadKeyFiles() []ssh.Signer {
 			continue
 		}
 		signer, err := ssh.ParsePrivateKey(data)
+		for i := range data {
+			data[i] = 0
+		}
 		if err != nil {
 			continue
 		}
@@ -344,7 +392,11 @@ func loadConfiguredKey(path string, keyData []byte, keyPassphrase []byte) (ssh.S
 		if err != nil {
 			return nil, fmt.Errorf("configured SSH key read failed: %w", err)
 		}
-		return parseConfiguredKey(data, keyPassphrase)
+		signer, parseErr := parseConfiguredKey(data, keyPassphrase)
+		for i := range data {
+			data[i] = 0
+		}
+		return signer, parseErr
 	default:
 		return nil, nil
 	}
@@ -392,10 +444,22 @@ func NeedsPassphrase(keyPath string, keyData []byte) bool {
 	}
 }
 
+// Verify validates SSH connectivity with a background context.
 func Verify(cfg VerifyConfig) error {
+	return VerifyWithContext(context.Background(), cfg)
+}
+
+// VerifyWithContext validates SSH connectivity and honors context cancellation.
+func VerifyWithContext(ctx context.Context, cfg VerifyConfig) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	dialCtx, cancel := withDefaultTimeout(ctx)
+	defer cancel()
+
 	authMethods, err := buildAuthMethods(cfg.Password, cfg.KeyPath, cfg.KeyData, cfg.KeyPassphrase)
 	if err != nil {
-		return err
+		return fmt.Errorf("build auth methods: %w", err)
 	}
 	defer closeAuthResources(authMethods)
 
@@ -408,15 +472,17 @@ func Verify(cfg VerifyConfig) error {
 		User:            cfg.User,
 		Auth:            flattenAuthMethods(authMethods),
 		HostKeyCallback: hostKeyCallback,
-		Timeout:         10 * time.Second,
 	}
 
 	addr := net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port))
-	client, err := ssh.Dial("tcp", addr, config)
+	client, err := dialSSHClientWithContext(dialCtx, addr, config)
 	if err != nil {
-		return err
+		return fmt.Errorf("dial SSH endpoint: %w", err)
 	}
-	return client.Close()
+	if err := client.Close(); err != nil {
+		return fmt.Errorf("close SSH client: %w", err)
+	}
+	return nil
 }
 
 func TrustHostKey(err *UnknownHostError) error {
@@ -425,7 +491,7 @@ func TrustHostKey(err *UnknownHostError) error {
 	}
 	khPath, readErr := ensureKnownHostsFile()
 	if readErr != nil {
-		return readErr
+		return fmt.Errorf("ensure known_hosts file: %w", readErr)
 	}
 
 	data, readErr := os.ReadFile(khPath)
@@ -439,12 +505,12 @@ func TrustHostKey(err *UnknownHostError) error {
 
 	f, openErr := os.OpenFile(khPath, os.O_APPEND|os.O_WRONLY, 0600)
 	if openErr != nil {
-		return openErr
+		return fmt.Errorf("open known_hosts file: %w", openErr)
 	}
 	defer f.Close()
 
 	if _, writeErr := fmt.Fprintln(f, err.KnownHostsLine); writeErr != nil {
-		return writeErr
+		return fmt.Errorf("write trusted host key: %w", writeErr)
 	}
 	return nil
 }
@@ -465,18 +531,43 @@ func expandUserPath(path string) string {
 func ensureKnownHostsFile() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("resolve user home directory: %w", err)
 	}
 	khPath := filepath.Join(home, ".ssh", "known_hosts")
 	if _, err := os.Stat(khPath); os.IsNotExist(err) {
 		if err := os.MkdirAll(filepath.Dir(khPath), 0700); err != nil {
-			return "", err
+			return "", fmt.Errorf("create known_hosts directory: %w", err)
 		}
 		if err := os.WriteFile(khPath, nil, 0600); err != nil {
-			return "", err
+			return "", fmt.Errorf("create known_hosts file: %w", err)
 		}
 	}
 	return khPath, nil
+}
+
+func withDefaultTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, defaultDialTimeout)
+}
+
+func dialSSHClientWithContext(ctx context.Context, addr string, config *ssh.ClientConfig) (*ssh.Client, error) {
+	dialer := &net.Dialer{}
+	netConn, err := dialer.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return nil, fmt.Errorf("dial TCP endpoint: %w", err)
+	}
+
+	conn, chans, reqs, err := ssh.NewClientConn(netConn, addr, config)
+	if err != nil {
+		if closeErr := netConn.Close(); closeErr != nil {
+			return nil, fmt.Errorf("create SSH client connection: %w (cleanup: %v)", err, closeErr)
+		}
+		return nil, fmt.Errorf("create SSH client connection: %w", err)
+	}
+
+	return ssh.NewClient(conn, chans, reqs), nil
 }
 
 func stripKnownHostPort(host string) string {
