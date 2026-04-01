@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -124,6 +125,13 @@ func zeroBytes(b []byte) {
 	for i := range b {
 		b[i] = 0
 	}
+}
+
+func hostDialTimeout(h host.Host) time.Duration {
+	if h.TimeoutSec <= 0 {
+		return 10 * time.Second
+	}
+	return time.Duration(h.TimeoutSec) * time.Second
 }
 
 func newPasswordInput(placeholder string) textinput.Model {
@@ -968,12 +976,13 @@ func verifyHostBeforeSave(h host.Host, encKey []byte) (host.Host, error) {
 		}
 
 		err := sshclient.Verify(sshclient.VerifyConfig{
-			Host:     h.Hostname,
-			Port:     h.Port,
-			User:     username,
-			Password: password,
-			KeyPath:  resolved.KeyPath,
-			KeyData:  keyData,
+			Host:        h.Hostname,
+			Port:        h.Port,
+			DialTimeout: hostDialTimeout(h),
+			User:        username,
+			Password:    password,
+			KeyPath:     resolved.KeyPath,
+			KeyData:     keyData,
 		})
 		zeroBytes(password)
 		zeroBytes(keyData)

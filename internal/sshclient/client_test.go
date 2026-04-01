@@ -1,7 +1,8 @@
 package sshclient
 
 import (
-	"bytes"
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -16,27 +17,66 @@ func TestUnknownHostErrorString(t *testing.T) {
 	}
 }
 
-func TestStripKnownHostPort(t *testing.T) {
-	cases := []struct {
+func TestStripKnownHostPortTable(t *testing.T) {
+	tests := []struct {
+		name string
 		in   string
 		want string
 	}{
-		{in: "example.com:22", want: "example.com"},
-		{in: "[2001:db8::1]:22", want: "2001:db8::1"},
-		{in: "example.com", want: "example.com"},
+		{name: "host with port", in: "example.com:22", want: "example.com"},
+		{name: "ipv6 with port", in: "[2001:db8::1]:2200", want: "2001:db8::1"},
+		{name: "plain host", in: "example.com", want: "example.com"},
 	}
 
-	for _, tc := range cases {
-		if got := stripKnownHostPort(tc.in); got != tc.want {
-			t.Fatalf("stripKnownHostPort(%q) = %q, want %q", tc.in, got, tc.want)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := stripKnownHostPort(tt.in)
+			if got != tt.want {
+				t.Fatalf("stripKnownHostPort(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func FuzzStripKnownHostPort(f *testing.F) {
+	f.Add("example.com")
+	f.Add("example.com:22")
+	f.Add("[2001:db8::1]:22")
+	f.Add(":")
+
+	f.Fuzz(func(t *testing.T, in string) {
+		_ = stripKnownHostPort(in)
+	})
+}
+
+func TestVerifyWithContextCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := VerifyWithContext(ctx, VerifyConfig{
+		Host:     "127.0.0.1",
+		Port:     22,
+		User:     "nobody",
+		Password: []byte("pw"),
+	})
+	if err == nil {
+		t.Fatal("expected canceled context to fail verification")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context canceled, got %v", err)
+	}
+}
+
+func TestTrustHostKeyNilInput(t *testing.T) {
+	if err := TrustHostKey(nil); err == nil {
+		t.Fatal("expected error for nil unknown host")
 	}
 }
 
 func TestExpandUserPath(t *testing.T) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		t.Fatalf("os.UserHomeDir() failed: %v", err)
+		t.Fatalf("resolve home directory: %v", err)
 	}
 
 	if got := expandUserPath("~"); got != home {
@@ -79,14 +119,8 @@ func TestSessionZeroMethods(t *testing.T) {
 	}
 }
 
-func TestTrustHostKeyNilInput(t *testing.T) {
-	if err := TrustHostKey(nil); err == nil {
-		t.Fatal("expected error for nil UnknownHostError")
-	}
-}
-
 func TestFlattenAuthMethodsEmpty(t *testing.T) {
-	if got := flattenAuthMethods(nil); !bytes.Equal([]byte{}, []byte{}) && len(got) != 0 {
+	if got := flattenAuthMethods(nil); len(got) != 0 {
 		t.Fatal("expected empty auth method list")
 	}
 }

@@ -22,6 +22,7 @@ const (
 	fGroup
 	fTags
 	fPort
+	fTimeout
 	fUsers
 	fSelectedUser
 	fSelectedUserAuth
@@ -40,17 +41,19 @@ func formInputIdx(focus int) int {
 		return 3
 	case fPort:
 		return 4
-	case fUsers:
+	case fTimeout:
 		return 5
-	case fSelectedUserCredential:
+	case fUsers:
 		return 6
+	case fSelectedUserCredential:
+		return 7
 	default:
 		return -1
 	}
 }
 
-func newHostFormInputs(alias, hostname, users string, port int, group string, tags []string) []textinput.Model {
-	inputs := make([]textinput.Model, 7)
+func newHostFormInputs(alias, hostname, users string, port, timeoutSec int, group string, tags []string) []textinput.Model {
+	inputs := make([]textinput.Model, 8)
 
 	inputs[0] = textinput.New()
 	inputs[0].Placeholder = "e.g. ManagedSSH Website"
@@ -79,14 +82,19 @@ func newHostFormInputs(alias, hostname, users string, port int, group string, ta
 	inputs[4].Width = 10
 
 	inputs[5] = textinput.New()
-	inputs[5].Placeholder = "e.g. root, ubuntu, deploy"
-	inputs[5].CharLimit = 256
-	inputs[5].Width = 80
+	inputs[5].Placeholder = "10"
+	inputs[5].CharLimit = 3
+	inputs[5].Width = 10
 
 	inputs[6] = textinput.New()
-	inputs[6].Placeholder = "Password or SSH Key Path"
-	inputs[6].CharLimit = 4096
-	inputs[6].Width = 36
+	inputs[6].Placeholder = "e.g. root, ubuntu, deploy"
+	inputs[6].CharLimit = 256
+	inputs[6].Width = 80
+
+	inputs[7] = textinput.New()
+	inputs[7].Placeholder = "Password or SSH Key Path"
+	inputs[7].CharLimit = 4096
+	inputs[7].Width = 36
 
 	inputs[0].SetValue(alias)
 	inputs[1].SetValue(hostname)
@@ -95,7 +103,10 @@ func newHostFormInputs(alias, hostname, users string, port int, group string, ta
 	if port > 0 {
 		inputs[4].SetValue(fmt.Sprintf("%d", port))
 	}
-	inputs[5].SetValue(users)
+	if timeoutSec > 0 {
+		inputs[5].SetValue(fmt.Sprintf("%d", timeoutSec))
+	}
+	inputs[6].SetValue(users)
 
 	return inputs
 }
@@ -117,7 +128,7 @@ func (m model) startHostForm(editID string, duplicate bool) (model, tea.Cmd) {
 
 	var alias, hostname, users, group string
 	var tags []string
-	var port int
+	var port, timeoutSec int
 	if editID != "" {
 		for _, h := range m.store.Hosts {
 			if h.ID != editID {
@@ -127,6 +138,7 @@ func (m model) startHostForm(editID string, duplicate bool) (model, tea.Cmd) {
 			hostname = h.Hostname
 			users = strings.Join(h.AccountNames(), ", ")
 			port = h.Port
+			timeoutSec = h.TimeoutSec
 			group = h.Group
 			tags = h.Tags
 			m.formDefaultUser = h.DefaultUser
@@ -153,7 +165,7 @@ func (m model) startHostForm(editID string, duplicate bool) (model, tea.Cmd) {
 		m.formEditing = ""
 	}
 
-	m.formInputs = newHostFormInputs(alias, hostname, users, port, group, tags)
+	m.formInputs = newHostFormInputs(alias, hostname, users, port, timeoutSec, group, tags)
 	m.syncFormUsers()
 	m.loadSelectedUserCredentialInput()
 	return m, textinput.Blink
@@ -233,7 +245,7 @@ func (m model) updateHostForm(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) activeFormFocuses() []int {
-	focuses := []int{fAlias, fHostname, fGroup, fTags, fPort, fUsers}
+	focuses := []int{fAlias, fHostname, fGroup, fTags, fPort, fTimeout, fUsers}
 	if len(m.formUserConfigs) > 0 {
 		focuses = append(focuses, fSelectedUser, fSelectedUserAuth, fSelectedUserCredential)
 	}
@@ -280,7 +292,8 @@ func (m model) submitHostForm() (tea.Model, tea.Cmd) {
 	group := strings.TrimSpace(m.formInputs[2].Value())
 	tagsStr := m.formInputs[3].Value()
 	portStr := strings.TrimSpace(m.formInputs[4].Value())
-	users := parseUsers(m.formInputs[5].Value())
+	timeoutStr := strings.TrimSpace(m.formInputs[5].Value())
+	users := parseUsers(m.formInputs[6].Value())
 
 	var tags []string
 	for _, t := range strings.Split(tagsStr, ",") {
@@ -326,10 +339,21 @@ func (m model) submitHostForm() (tea.Model, tea.Cmd) {
 		port = p
 	}
 
+	timeoutSec := 10
+	if timeoutStr != "" {
+		t, err := strconv.Atoi(timeoutStr)
+		if err != nil || t < 1 || t >= 999 {
+			m.formErr = "Timeout must be between 1 and 998 seconds"
+			return m, nil
+		}
+		timeoutSec = t
+	}
+
 	h := host.Host{
 		Alias:       alias,
 		Hostname:    hostname,
 		Port:        port,
+		TimeoutSec:  timeoutSec,
 		Group:       group,
 		Tags:        tags,
 		DefaultUser: m.formDefaultUser,
@@ -410,7 +434,8 @@ func (m model) viewHostForm() string {
 	m.formInputs[2].Width = colW
 	m.formInputs[3].Width = colW
 	m.formInputs[4].Width = min(10, colW)
-	m.formInputs[5].Width = contentW
+	m.formInputs[5].Width = min(10, colW)
+	m.formInputs[6].Width = contentW
 
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("📝 "+title) + "\n\n")
@@ -434,7 +459,8 @@ func (m model) viewHostForm() string {
 	b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, groupCol, "  ", tagsCol) + "\n\n")
 
 	portCol := renderFieldCol(fPort, "Port", 4, colW)
-	b.WriteString(portCol + "\n\n")
+	timeoutCol := renderFieldCol(fTimeout, "Timeout (sec)", 5, colW)
+	b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, portCol, "  ", timeoutCol) + "\n\n")
 
 	b.WriteString(lipgloss.NewStyle().Foreground(subtle).Render(strings.Repeat("─", formW-4)) + "\n\n")
 
@@ -443,7 +469,7 @@ func (m model) viewHostForm() string {
 		lbl = focusedLabel("▸ SSH Users")
 	}
 	b.WriteString(lbl + "\n")
-	b.WriteString(m.formInputs[5].View() + "\n")
+	b.WriteString(m.formInputs[6].View() + "\n")
 	b.WriteString(hintStyle.Render("  Comma-separated usernames. Example: main, ubuntu, deploy") + "\n\n")
 
 	if len(m.formUserConfigs) > 0 {
@@ -505,7 +531,7 @@ func (m model) renderSelectedUserSection(contentW int) string {
 
 	cardBorder := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(highlight).Padding(1, 2).Width(contentW)
 	cardContentW := max(20, contentW-6)
-	m.formInputs[6].Width = cardContentW
+	m.formInputs[7].Width = cardContentW
 
 	var card strings.Builder
 	headerLabel := "👤 " + user.Username
@@ -532,7 +558,7 @@ func (m model) renderSelectedUserSection(contentW int) string {
 			credLabel = focusedLabel("▸ Password")
 		}
 		card.WriteString(credLabel + "\n")
-		card.WriteString(m.formInputs[6].View() + "\n")
+		card.WriteString(m.formInputs[7].View() + "\n")
 		if m.formEditing != "" && len(user.ExistingEncPassword) > 0 {
 			card.WriteString(hintStyle.Render("  Leave empty to keep current password") + "\n")
 		}
@@ -542,7 +568,7 @@ func (m model) renderSelectedUserSection(contentW int) string {
 			credLabel = focusedLabel("▸ SSH Key")
 		}
 		card.WriteString(credLabel + "\n")
-		card.WriteString(m.formInputs[6].View() + "\n")
+		card.WriteString(m.formInputs[7].View() + "\n")
 		card.WriteString(hintStyle.Render("  Key path or paste private key") + "\n")
 		card.WriteString(m.renderPathSuggestions(cardContentW))
 		if m.formEditing != "" && (user.ExistingKeyPath != "" || len(user.ExistingEncKey) > 0) {
@@ -624,23 +650,23 @@ func (m *model) storeSelectedUserCredentialInput() {
 		return
 	}
 	if user.AuthType == "password" {
-		user.Password = m.formInputs[6].Value()
+		user.Password = m.formInputs[7].Value()
 	} else {
-		user.KeyValue = strings.TrimSpace(m.formInputs[6].Value())
+		user.KeyValue = strings.TrimSpace(m.formInputs[7].Value())
 	}
 }
 
 func (m *model) loadSelectedUserCredentialInput() {
-	m.formInputs[6].SetValue("")
+	m.formInputs[7].SetValue("")
 	user := m.currentFormUser()
 	if user == nil {
 		return
 	}
-	configureCredentialInput(&m.formInputs[6], user.AuthType, "Override")
+	configureCredentialInput(&m.formInputs[7], user.AuthType, "Override")
 	if user.AuthType == "password" {
-		m.formInputs[6].SetValue(user.Password)
+		m.formInputs[7].SetValue(user.Password)
 	} else {
-		m.formInputs[6].SetValue(user.KeyValue)
+		m.formInputs[7].SetValue(user.KeyValue)
 	}
 }
 
@@ -656,7 +682,7 @@ func configureCredentialInput(input *textinput.Model, authType string, mode stri
 }
 
 func (m *model) syncFormUsers() {
-	parsed := parseUsers(m.formInputs[5].Value())
+	parsed := parseUsers(m.formInputs[6].Value())
 	keep := make([]formUserConfig, 0, len(parsed))
 	for _, uname := range parsed {
 		var existing *formUserConfig
@@ -730,7 +756,7 @@ func splitKeyValue(raw string) (string, string) {
 func (m *model) activePathInput() (*textinput.Model, bool) {
 	if m.formFocus == fSelectedUserCredential {
 		if user := m.currentFormUser(); user != nil && user.AuthType == "key" {
-			return &m.formInputs[6], true
+			return &m.formInputs[7], true
 		}
 	}
 	return nil, false

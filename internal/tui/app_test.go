@@ -1,15 +1,13 @@
 package tui
 
-import (
-	"testing"
-)
+import "testing"
 
 func TestZeroBytes(t *testing.T) {
 	data := []byte{1, 2, 3}
 	zeroBytes(data)
-	for i, b := range data {
-		if b != 0 {
-			t.Fatalf("expected data[%d] to be zero, got %d", i, b)
+	for i, v := range data {
+		if v != 0 {
+			t.Fatalf("expected data[%d] to be zero, got %d", i, v)
 		}
 	}
 }

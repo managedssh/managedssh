@@ -69,13 +69,8 @@ func Export(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return fmt.Errorf("creating export directory: %w", err)
 	}
-
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, out, 0600); err != nil {
+	if err := atomicWrite(path, out, 0600); err != nil {
 		return fmt.Errorf("writing export bundle: %w", err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		return fmt.Errorf("finalizing export bundle: %w", err)
 	}
 	return nil
 }
@@ -154,9 +149,42 @@ func loadBundle(path string) (*bundle, error) {
 }
 
 func atomicWrite(path string, data []byte, perm os.FileMode) error {
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, perm); err != nil {
+	tmpFile, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	tmpPath := tmpFile.Name()
+	closed := false
+	defer func() {
+		if !closed {
+			_ = tmpFile.Close()
+		}
+		_ = os.Remove(tmpPath)
+	}()
+
+	if err := tmpFile.Chmod(perm); err != nil {
+		return err
+	}
+	if _, err := tmpFile.Write(data); err != nil {
+		return err
+	}
+	if err := tmpFile.Sync(); err != nil {
+		return err
+	}
+	if err := tmpFile.Close(); err != nil {
+		return err
+	}
+	closed = true
+
+	if err := os.Rename(tmpPath, path); err != nil {
+		return err
+	}
+
+	dir, err := os.Open(filepath.Dir(path))
+	if err == nil {
+		_ = dir.Sync()
+		_ = dir.Close()
+	}
+
+	return nil
 }

@@ -12,3 +12,7 @@ func TestMainWiresCommandExecute(t *testing.T) {
 		t.Fatal("expected cmd.Execute to be a function")
 	}
 }
+
+func TestMainPackageCompiles(t *testing.T) {
+	// Presence of this test keeps the top-level package in test runs.
+}
