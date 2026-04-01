@@ -52,6 +52,14 @@ make run
 make install
 ```
 
+Arch Linux (AUR) install:
+
+```bash
+yay -Sy managedssh
+# or
+paru -Sy managedssh
+```
+
 4. First launch flow:
 - Create a master key.
 - Add a host and one or more users.
