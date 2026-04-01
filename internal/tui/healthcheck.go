@@ -118,17 +118,16 @@ func checkHostHealth(h host.Host, encKey []byte) hostHealthStatus {
 			keyPassphrase = dec
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		err := sshclient.VerifyWithContext(ctx, sshclient.VerifyConfig{
+		err := sshclient.Verify(sshclient.VerifyConfig{
 			Host:          h.Hostname,
 			Port:          h.Port,
+			DialTimeout:   hostDialTimeout(h),
 			User:          username,
 			Password:      password,
 			KeyPath:       resolved.KeyPath,
 			KeyData:       keyData,
 			KeyPassphrase: keyPassphrase,
 		})
-		cancel()
 		zeroBytes(password)
 		zeroBytes(keyData)
 		zeroBytes(keyPassphrase)

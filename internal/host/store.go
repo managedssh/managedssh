@@ -21,6 +21,7 @@ type Host struct {
 	Alias       string     `json:"alias"`
 	Hostname    string     `json:"hostname"`
 	Port        int        `json:"port"`
+	TimeoutSec  int        `json:"timeout_sec,omitempty"`
 	Group       string     `json:"group,omitempty"`
 	Tags        []string   `json:"tags,omitempty"`
 	DefaultUser string     `json:"default_user,omitempty"`
@@ -113,6 +114,9 @@ func (s *Store) Add(h Host) error {
 	if h.Port == 0 {
 		h.Port = 22
 	}
+	if h.TimeoutSec == 0 {
+		h.TimeoutSec = 10
+	}
 	h.Normalize()
 	s.Hosts = append(s.Hosts, h)
 	return s.Save()
@@ -194,6 +198,9 @@ func (s *Store) Filter(query string) []Host {
 func (h *Host) Normalize() {
 	if h.Port == 0 {
 		h.Port = 22
+	}
+	if h.TimeoutSec <= 0 {
+		h.TimeoutSec = 10
 	}
 
 	defaultAuth := normalizeAuthType(h.DefaultAuthType)

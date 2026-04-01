@@ -208,6 +208,7 @@ func (m model) connectSSHWithResolved(h host.Host, user string, resolved host.Re
 	sess := &sshclient.Session{
 		Host:          h.Hostname,
 		Port:          h.Port,
+		DialTimeout:   hostDialTimeout(h),
 		User:          user,
 		Password:      password,
 		KeyPath:       keyPath,
@@ -484,6 +485,7 @@ func (m model) renderDetails() string {
 		render("Host", h.Hostname),
 		render("Users", strings.Join(users, ", ")),
 		render("Port", fmt.Sprintf("%d", h.Port)),
+		render("Timeout", fmt.Sprintf("%ds", h.TimeoutSec)),
 		render("Group", h.Group),
 		render("Tags", strings.Join(h.Tags, ", ")),
 	}

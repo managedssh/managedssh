@@ -26,6 +26,7 @@ const defaultDialTimeout = 10 * time.Second
 type VerifyConfig struct {
 	Host          string
 	Port          int
+	DialTimeout   time.Duration
 	User          string
 	Password      []byte
 	KeyPath       string
@@ -58,6 +59,7 @@ func (e *UnknownHostError) Error() string {
 type Session struct {
 	Host          string
 	Port          int
+	DialTimeout   time.Duration
 	User          string
 	Password      []byte
 	KeyPath       string
@@ -83,7 +85,7 @@ func (s *Session) RunWithContext(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	dialCtx, cancel := withDefaultTimeout(ctx)
+	dialCtx, cancel := withDefaultTimeout(ctx, s.DialTimeout)
 	defer cancel()
 
 	defer s.zeroPassword()
@@ -454,7 +456,7 @@ func VerifyWithContext(ctx context.Context, cfg VerifyConfig) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	dialCtx, cancel := withDefaultTimeout(ctx)
+	dialCtx, cancel := withDefaultTimeout(ctx, cfg.DialTimeout)
 	defer cancel()
 
 	authMethods, err := buildAuthMethods(cfg.Password, cfg.KeyPath, cfg.KeyData, cfg.KeyPassphrase)
@@ -545,11 +547,14 @@ func ensureKnownHostsFile() (string, error) {
 	return khPath, nil
 }
 
-func withDefaultTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+func withDefaultTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
 	if _, ok := ctx.Deadline(); ok {
 		return ctx, func() {}
 	}
-	return context.WithTimeout(ctx, defaultDialTimeout)
+	if timeout <= 0 {
+		timeout = defaultDialTimeout
+	}
+	return context.WithTimeout(ctx, timeout)
 }
 
 func dialSSHClientWithContext(ctx context.Context, addr string, config *ssh.ClientConfig) (*ssh.Client, error) {

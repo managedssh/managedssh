@@ -143,3 +143,21 @@ func TestStoreUpdateRejectsDuplicateIdentity(t *testing.T) {
 		t.Fatalf("expected ErrDuplicateAlias, got %v", err)
 	}
 }
+
+func TestHostNormalizeTimeoutDefaultsAndCustom(t *testing.T) {
+	t.Run("defaults to ten seconds", func(t *testing.T) {
+		h := Host{}
+		h.Normalize()
+		if h.TimeoutSec != 10 {
+			t.Fatalf("expected default timeout 10, got %d", h.TimeoutSec)
+		}
+	})
+
+	t.Run("preserves positive timeout", func(t *testing.T) {
+		h := Host{TimeoutSec: 17}
+		h.Normalize()
+		if h.TimeoutSec != 17 {
+			t.Fatalf("expected timeout 17, got %d", h.TimeoutSec)
+		}
+	})
+}

@@ -19,7 +19,7 @@ ManagedSSH is a terminal-first SSH connection manager built with Go, Cobra, and 
 - Encrypted vault using Argon2 + AES-GCM for stored credentials.
 - Host key verification with known_hosts integration and trust confirmation.
 - Host profiles with:
-	- Alias, hostname, port, group, tags
+	- Alias, hostname, port, SSH timeout, group, tags
 	- Multiple user accounts per host
 	- Per-user password or SSH key authentication
 - Support for SSH key path or inline encrypted key data.
@@ -88,14 +88,34 @@ make install
 Common commands:
 
 ```bash
+make help
 make build
 make run
 make test
+make test-race
+make vet
+make lint
 make fmt
 make tidy
 make install
+make uninstall
 make clean
 ```
+
+Target summary:
+
+- make help: show available targets
+- make build: build the binary as managedssh in the project root
+- make run: run the app with go run
+- make test: run all tests
+- make test-race: run all tests with the race detector
+- make vet: run go vet checks
+- make lint: run golangci-lint if installed, otherwise skip with a message
+- make fmt: format Go files (excluding vendor)
+- make tidy: run go mod tidy
+- make install: install to GOBIN or GOPATH/bin, with ~/.local/bin fallback
+- make uninstall: remove installed binary from GOBIN, GOPATH/bin, or ~/.local/bin fallback
+- make clean: remove the local built binary
 
 Install behavior:
 
