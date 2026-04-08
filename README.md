@@ -60,6 +60,15 @@ yay -Sy managedssh
 paru -Sy managedssh
 ```
 
+Homebrew install from the `mylovelytools/managedssh` tap:
+
+```bash
+brew tap mylovelytools/managedssh
+brew install managedssh
+```
+
+The Homebrew formula lives in the `mylovelytools/homebrew-managedssh` tap repository, builds from the stable release source tarball, and installs the `managedssh` binary, the `managedssh.1` man page, and the `LICENSE` file.
+
 4. First launch flow:
 - Create a master key.
 - Add a host and one or more users.
