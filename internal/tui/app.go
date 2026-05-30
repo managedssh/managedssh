@@ -39,6 +39,7 @@ const (
 	phaseChangeKeyInit
 	phaseChangeKeyNew
 	phaseChangeKeyConfirm
+	phaseSSHImport
 )
 
 type sshDoneMsg struct{ err error }
@@ -350,6 +351,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateChangeKeyNew(msg)
 	case phaseChangeKeyConfirm:
 		return m.updateChangeKeyConfirm(msg)
+	case phaseSSHImport:
+		return m.updateSSHImport(msg)
 	}
 	return m, nil
 }
@@ -395,6 +398,8 @@ func (m model) View() string {
 		content = m.viewChangeKeyNew()
 	case phaseChangeKeyConfirm:
 		content = m.viewChangeKeyConfirm()
+	case phaseSSHImport:
+		content = m.viewSSHImport()
 	}
 
 	if m.width > 0 {
@@ -1137,6 +1142,61 @@ func saveKeyPassphrase(store *host.Store, hostID, username string, encKey []byte
 		}
 	}
 	return fmt.Errorf("host not found")
+}
+
+// ------------------------------------------------------------------
+// SSH quick add
+// ------------------------------------------------------------------
+
+func newSSHCommandInput() textinput.Model {
+	ti := textinput.New()
+	ti.Placeholder = "e.g. ssh -p 2222 -i ~/.ssh/key user@host"
+	ti.EchoMode = textinput.EchoNormal
+	ti.Focus()
+	ti.CharLimit = 512
+	ti.Width = 60
+	return ti
+}
+
+func (m model) updateSSHImport(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if key, ok := msg.(tea.KeyMsg); ok {
+		switch key.String() {
+		case "esc":
+			m.phase = phaseDashboard
+			m.err = ""
+			return m, nil
+		case "enter":
+			val := strings.TrimSpace(m.input.Value())
+			if val == "" {
+				m.err = "Please enter an SSH command"
+				return m, nil
+			}
+			p, parseErr := parseSSHCommand(val)
+			if parseErr != nil {
+				m.err = "Could not parse: " + parseErr.Error()
+				return m, nil
+			}
+			m.err = ""
+			return m.startHostFormFromSSH(p)
+		}
+	}
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	return m, cmd
+}
+
+func (m model) viewSSHImport() string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("⚡ SSH Quick Add") + "\n")
+	b.WriteString(subtitleStyle.Render("Paste or type an SSH command to pre-fill host details.") + "\n\n")
+	b.WriteString(inputLabelStyle.Render("SSH Command") + "\n")
+	b.WriteString(m.input.View() + "\n\n")
+	if m.err != "" {
+		b.WriteString(errorStyle.Render("✗ "+m.err) + "\n\n")
+	}
+	b.WriteString(hintStyle.Render("Flags supported: -p port  -i keypath  user@host  -l user") + "\n")
+	b.WriteString(statusBarStyle.Render("enter parse & continue • esc cancel"))
+	return boxStyle.Render(b.String())
 }
 
 // ------------------------------------------------------------------

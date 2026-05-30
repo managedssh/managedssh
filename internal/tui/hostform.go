@@ -171,6 +171,30 @@ func (m model) startHostForm(editID string, duplicate bool) (model, tea.Cmd) {
 	return m, textinput.Blink
 }
 
+func (m model) startHostFormFromSSH(p parsedSSH) (model, tea.Cmd) {
+	m, cmd := m.startHostForm("", false)
+	m.formInputs[1].SetValue(p.Hostname)
+	if p.Port > 0 {
+		m.formInputs[4].SetValue(strconv.Itoa(p.Port))
+	}
+	if p.User != "" {
+		m.formInputs[6].SetValue(p.User)
+		m.syncFormUsers()
+		if p.KeyPath != "" && len(m.formUserConfigs) > 0 {
+			m.formUserConfigs[0].AuthType = "key"
+			m.formUserConfigs[0].KeyValue = p.KeyPath
+			m.loadSelectedUserCredentialInput()
+		}
+	}
+	// Alias is empty — keep focus there so the user fills it in first.
+	m.formFocus = fAlias
+	for i := range m.formInputs {
+		m.formInputs[i].Blur()
+	}
+	m.formInputs[0].Focus()
+	return m, cmd
+}
+
 func (m model) updateHostForm(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if key, ok := msg.(tea.KeyMsg); ok {
 		switch key.String() {

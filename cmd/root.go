@@ -18,6 +18,7 @@ Interface Controls:
 	esc         clear search or cancel current context
 	j / k       move selection (arrow keys also supported)
 	a           add host
+	s           add host from SSH command (e.g. ssh -p 2222 -i ~/.ssh/key user@host)
 	e           edit selected host
 	y           duplicate selected host
 	d           delete selected host (with confirmation)

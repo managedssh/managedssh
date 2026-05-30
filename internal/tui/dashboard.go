@@ -103,6 +103,11 @@ func (m model) updateDashboardNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case "a":
 		m, cmd := m.startHostForm("", false)
 		return m, cmd
+	case "s":
+		m.phase = phaseSSHImport
+		m.input = newSSHCommandInput()
+		m.err = ""
+		return m, textinput.Blink
 	case "e":
 		if len(m.filtered) > 0 {
 			h := m.filtered[m.hostCursor]
@@ -513,11 +518,12 @@ func (m model) renderCommands(maxW int) string {
 		col = 25
 	}
 	return "  " + pad(cmd("/", "Search"), col) + cmd("l", "Lock Session") + "\n" +
-		"  " + pad(cmd("a", "Add"), col) + cmd("c", "Change Master Key") + "\n" +
+		"  " + pad(cmd("a", "Add"), col) + cmd("s", "Quick Add") + "\n" +
 		"  " + pad(cmd("e", "Edit"), col) + cmd("y", "Duplicate") + "\n" +
 		"  " + pad(cmd("d", "Delete"), col) + cmd("h", "Health Check") + "\n" +
-		"  " + pad(cmd("x", "Export Backup"), col) + cmd("i", "Import Backup") + "\n" +
-		"  " + pad(cmd("⏎", "Connect"), col) + cmd("q", "Quit")
+		"  " + pad(cmd("c", "Change Master Key"), col) + cmd("x", "Export Backup") + "\n" +
+		"  " + pad(cmd("i", "Import Backup"), col) + cmd("⏎", "Connect") + "\n" +
+		"  " + cmd("q", "Quit")
 }
 
 func (m model) updateUserSelect(msg tea.Msg) (tea.Model, tea.Cmd) {

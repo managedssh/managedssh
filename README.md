@@ -27,11 +27,12 @@ ManagedSSH is a terminal-first SSH connection manager built with Go, Cobra, and 
 - Master key rotation that re-encrypts all stored secrets.
 - Backup export with atomic writes.
 - Backup import with master key verification, validation checks, and overwrite confirmation.
+- SSH Quick Add: paste any standard `ssh` command and have the host form pre-filled automatically.
 - Search and filtering in dashboard by alias, host, group, tags, and users.
 
 ## Requirements
 
-- Go 1.26.1
+- Go 1.26.3
 - macOS, Linux, or another environment with terminal SSH access
 
 ## Quick Start
@@ -84,6 +85,7 @@ The Homebrew formula lives in the `mylovelytools/homebrew-managedssh` tap reposi
 - esc: clear search or cancel current context
 - j / k or arrow keys: move selection
 - a: add host
+- s: SSH quick add — parse an SSH command (e.g. `ssh -p 2222 -i ~/.ssh/key user@host`) and pre-fill the host form
 - e: edit selected host
 - y: duplicate selected host
 - d: delete selected host (with confirmation)
@@ -145,7 +147,8 @@ Install behavior:
 
 - main.go: entry point
 - cmd/: Cobra command wiring
-- internal/tui/: Bubble Tea state machine and views
+- internal/tui/: Bubble Tea state machine, views, and SSH command parser
+- internal/fsutil/: shared atomic file write helper
 - internal/host/: host models and JSON persistence
 - internal/sshclient/: SSH verify, trust, and session logic
 - internal/vault/: master key setup, unlock, and encryption helpers

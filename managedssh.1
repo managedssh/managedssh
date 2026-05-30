@@ -1,4 +1,4 @@
-.TH MANAGEDSSH 1 "March 2026" "managedssh 1.1.1" "User Commands"
+.TH MANAGEDSSH 1 "May 2026" "managedssh 1.1.3" "User Commands"
 .SH NAME
 managedssh \- terminal-first SSH connection manager with encrypted credential storage
 .SH SYNOPSIS
@@ -44,6 +44,21 @@ Move selection (arrow keys also supported).
 .TP
 .B a
 Add host.
+.TP
+.B s
+SSH quick add.
+Parse a standard
+.BR ssh (1)
+command (e.g.\&
+.BR "ssh -p 2222 -i ~/.ssh/key user@host" )
+and pre-fill the host form with the extracted hostname, port, user, and key
+path. Only the alias field needs to be supplied manually.
+Supported flags:
+.BR -p " port,"
+.BR -i " keypath,"
+.BR -l " user,"
+.BR user@host " destination."
+Unknown flags are silently ignored.
 .TP
 .B e
 Edit selected host.
